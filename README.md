@@ -1,219 +1,234 @@
-# 🎬 Synopsify
+# 🎬 Synopsify - 영화 장르 분류 프로젝트
 
 영화 **줄거리(plot)** 를 입력하면, 해당 영화의 **장르(genre)** 를 예측하는  
-멀티라벨(Multi-label) 분류 모델
+**분류 모델** 비교 프로젝트
 
-- 데이터셋: [Kaggle - Genre Classification Dataset (IMDB)](https://www.kaggle.com/datasets/hijest/genre-classification-dataset-imdb)
-- 프레임워크: **PyTorch**
-- 실행 환경: **Google Colab**
+- **프레임워크**: PyTorch, Transformers
+- **모델**: LSTM, BERT-base
+- **장르 수**: 27개 클래스
+
+## 📋 프로젝트 개요
+
+이 프로젝트는 영화 줄거리 텍스트를 입력받아 27개 장르 중 하나로 분류하는 **Single-label 분류** 모델입니다.
+
+- **입력**: 영화 줄거리 텍스트 (영어)
+- **출력**: 27개 장르 중 1개 예측
+- **장르 종류**: action, comedy, drama, thriller, horror, sci-fi, romance 등
 
 
-## 1. 프로젝트 개요
+## 📊 데이터셋
 
-이 프로젝트의 목표는:
+### 데이터 출처
+- **Kaggle**: [Genre Classification Dataset (IMDB)](https://www.kaggle.com/datasets/hijest/genre-classification-dataset-imdb)
 
-1. 영화의 **제목(title)** 과 **줄거리(plot)** 를 입력으로 받아
-2. 영화가 속한 **하나 이상의 장르**(예: `Drama`, `Comedy`, `Crime`, ...)를
-3. **멀티라벨 분류(Multi-Label Classification)** 형태로 예측하는 것입니다.
+### 데이터 구성
+- **Train 데이터**: 54,214개 샘플
+- **Test 데이터**: 54,200개 샘플
+- **장르 수**: 27개 클래스
+- **데이터 형식**: `id ::: title ::: genre ::: plot`
 
+### 데이터 특징
+- 장르 불균형 존재 (drama, comedy 등이 많음)
+- 텍스트 길이 다양 (최대 256 토큰으로 제한)
 
-## 2. 데이터셋 설명
+### 데이터 전처리
+1. **텍스트 정제**: 소문자 변환, 구두점 제거, 공백 정리
+2. **토큰화**: 문장을 단어 단위로 분리
+3. **Vocab 생성**: 자주 쓰인 상위 30,000개 단어만 사용 (LSTM)
+4. **길이 통일**: 모든 문장을 256 토큰으로 맞춤 (부족하면 padding, 넘치면 truncation)
+5. **데이터 분할**: Train 데이터를 8:2 비율로 train/validation 분할
 
-Kaggle에서 제공하는 압축 파일을 풀면 보통 다음과 같은 파일들이 포함됩니다.
+## 🏗️ 모델 구조
 
-- `train_data.txt`
-- `test_data.txt`
-- `test_data_solution.txt` (레이블이 포함된 정답 파일)
+### 1. LSTM 모델
 
-이 중 **학습에 사용하는 파일은 `train_data.txt`**이며, 각 줄은 아래와 같은 형식입니다.
-
-```text
-id ::: title ::: genre ::: plot
+#### 구조
+```
+Input → Embedding → Bidirectional LSTM → Dropout → FC Layer → Output
 ```
 
-또는 버전에 따라:
+#### 주요 특징
+- **Embedding**: 단어를 128차원 벡터로 변환
+- **Bidirectional LSTM**: 앞→뒤, 뒤→앞 양방향으로 문맥 이해
+  - NUM_LAYERS: 1
+  - HIDDEN_DIM: 128
+- **Dropout**: 0.4 (과적합 방지)
+- **FC Layer**: 27개 장르 분류
 
-```text
-title ::: genre ::: plot
-```
+#### 하이퍼파라미터
+| 항목 | LSTM | LSTM CW |
+|------|-----------|----------|
+| Vocab Size | 30,000 | 30,000 |
+| Embedding Dim | 128 | 128 |
+| Hidden Dim | 128 | 128 |
+| NUM_LAYERS | 1 | 1 |
+| Bidirectional | ✅ | ✅ |
+| Dropout | 0.4 | 0.4 |
+| Max Seq Length | 256 | 256 |
+| Optimizer | Adam | Adam |
+| Learning Rate | 5e-4 | 5e-4 |
+| Batch Size | 64 | 64 |
+| Epochs | 10 | 10 |
+| Class Weight | ❌ | ✅ |
 
-- `title`: 영화 제목 (예: `Oscar et la dame rose (2009)`)
-- `genre`: 장르 (예: `Drama`, 또는 `Drama, Romance` 처럼 여러 개)
-- `plot`: 영화 줄거리 텍스트
-
-코드에서는 다음과 같이 전처리합니다.
-
-- `title` 뒤에 붙은 `(2009)` 같은 연도 표기 제거
-- `text = title + ". " + plot` 형태로 합쳐서 **모델 입력**으로 사용
-- `genre` 컬럼을 `,` 또는 `|` 로 split 해서 **장르 리스트**로 사용  
-  예: `"Drama, Romance"` → `["drama", "romance"]`
+**LSTM CW**: Class Weight를 적용하여 드문 장르에 더 높은 가중치 부여
 
 ---
 
-## 3. 모델 구조
+### 2. BERT 모델
 
-PyTorch로 구현한 간단한 텍스트 분류기입니다.
-
-1. **토큰화 & 정수 인코딩**
-   - 전체 텍스트를 소문자로 변환, 특수문자 제거
-   - 공백 기준 토큰화
-   - 등장 빈도 상위 `MAX_VOCAB_SIZE`개의 단어만 사용 (기본 20,000)
-   - `<pad> = 0`, `<unk> = 1` 인덱스 사용
-
-2. **입력 시퀀스 구성**
-   - 각 샘플을 정수 시퀀스로 변환
-   - 길이는 `MAX_SEQ_LEN` (기본 256)으로 **pad 또는 truncate**
-
-3. **모델 아키텍처**
-
-```text
-[입력 토큰 ID 시퀀스] → [임베딩] → [패딩 제외 평균] → [Linear + ReLU + Dropout] → [Linear] → [장르별 로짓]
+#### 구조
+```
+Input → Embedding (Token + Position) → Transformer (12 layers) → Classification Head → Output
 ```
 
-- `nn.Embedding(vocab_size, EMBED_DIM)`
-- 토큰 임베딩의 **마스크드 평균(pooling)** 사용
-- `nn.Linear(EMBED_DIM, HIDDEN_DIM)` + `ReLU` + `Dropout(0.3)`
-- `nn.Linear(HIDDEN_DIM, NUM_LABELS)`
-- 손실 함수: `BCEWithLogitsLoss` (multi-label용)
+#### 주요 특징
+- **Pretrained BERT-base**: 이미 학습된 언어 이해 모델 사용
+  - NUM_LAYERS: 12
+  - HIDDEN_DIM: 768
+- **Classification Head**: 27개 장르 분류용 레이어 추가
+- **Fine-tuning**: 영화 데이터로 추가 학습
 
-4. **출력**
-   - 각 장르에 대해 **0~1 사이의 확률(sigmoid)** 로 해석
-   - 기준 임계값(threshold, 기본 0.5 또는 0.3) 이상이면 해당 장르로 예측
+#### 하이퍼파라미터
+| 항목 | 값 |
+|------|-----|
+| Model | bert-base-uncased |
+| Transformer Layers | 12 (사전 설정) |
+| Hidden Size | 768 (사전 설정) |
+| Max Length | 256 |
+| Optimizer | AdamW |
+| Learning Rate | 2e-5 |
+| Batch Size | 16 |
+| Epochs | 3 |
+| Warmup Ratio | 0.1 |
 
----
+## 📈 실험 결과
 
-## 4. Colab에서 실행 방법
+### 성능 비교
 
-### 4.1. 데이터 준비
+| 모델 | Accuracy | F1-macro | F1-micro | Loss |
+|------|----------|----------|----------|------|
+| **LSTM** | 0.5376 | 0.1847 | 0.5376 | 1.6593 |
+| **LSTM CW** | 0.4856 | 0.2646 | 0.4856 | 2.2267 |
+| **BERT** | **0.6947** | **0.4838** | **0.6947** | **1.0699** |
 
-1. Kaggle에서 데이터셋 다운로드  
-   (예: `genre-classification-dataset-imdb.zip`)
+### 주요 발견사항
 
-2. Colab 환경에 업로드 방법 (둘 중 하나 선택)
+1. **BERT가 모든 지표에서 최고 성능**
+   - Accuracy: +15.7%p (vs LSTM High)
+   - F1-macro: +29.9%p (vs LSTM High)
 
-   - **방법 A: 수동 업로드**
-     - Colab 왼쪽 사이드바 → 폴더 아이콘 → `Upload` 버튼 누르고 zip 파일 업로드
-     - 업로드 후 아래 명령으로 압축 해제:
-       ```bash
-       !unzip "/content/genre-classification-dataset-imdb.zip" -d "/content/"
-       ```
-       압축을 풀면 `/content/Genre Classification Dataset` 폴더가 생겼다고 가정.
+2. **LSTM CW의 Class Weight 효과**
+   - F1-macro는 향상 (0.1847 → 0.2646)
+   - Accuracy는 하락 (0.5376 → 0.4856)
 
-   - **방법 B: 구글 드라이브 마운트 후 사용**
-     - 드라이브에 zip 업로드 → Colab에서 마운트 → 동일하게 `unzip` 후 경로만 수정
+3. **Pretrained 모델의 효과 확인**
+   - BERT의 사전 학습된 언어 이해 능력이 장르 분류에 유리
+   - 적은 Epochs(3)로도 좋은 성능 달성
 
-3. 코드에서 `DATA_DIR` 경로 설정
+## 🚀 사용 방법
 
+### 1. 데이터 준비
+
+1. Kaggle에서 데이터셋 다운로드
+   - [Genre Classification Dataset (IMDB)](https://www.kaggle.com/datasets/hijest/genre-classification-dataset-imdb)
+
+2. `data/` 폴더에 파일 복사
+   ```
+   data/
+   ├── train_data.txt
+   ├── test_data.txt
+   └── test_data_solution.txt
+   ```
+
+### 2. 모델 학습
+
+#### LSTM 모델 학습
+```bash
+# LSTM (Class Weight 없음)
+jupyter notebook lstm_train.ipynb
+
+# LSTM CW(Class Weight 적용)
+jupyter notebook lstm_CW_train.ipynb
+```
+
+#### BERT 모델 학습
+```bash
+jupyter notebook bert_train.ipynb
+```
+
+### 3. 예측
+
+학습된 모델로 장르 예측:
+```bash
+jupyter notebook predict.ipynb
+```
+
+**사용 예시**:
 ```python
-DATA_DIR = "/content/Genre Classification Dataset"
-TRAIN_FILE = os.path.join(DATA_DIR, "train_data.txt")
+# LSTM 모델 사용
+예측 장르: comedy (confidence=0.118)
+
+# BERT 모델 사용
+예측 장르: fantasy (confidence=0.331)
 ```
 
-데이터 폴더 이름이 다르다면 여기만 실제 이름으로 수정하면 됩니다.
-
 ---
 
-### 4.2. Colab 코드 구조
+## 📁 프로젝트 구조
 
-README와 함께 제공된 Colab 코드는 다음 순서의 셀로 구성되어 있습니다.
-
-1. **라이브러리 임포트 & 디바이스 설정**
-2. **데이터 경로 & 하이퍼파라미터 설정**
-3. **데이터 로드 & 기본 전처리**
-   - `train_data.txt` 읽기, 컬럼 이름 정리
-4. **장르 전처리 (멀티라벨)**
-   - 장르 문자열 → 리스트 → multi-hot 벡터
-5. **텍스트 정제 & 토큰화, Vocab 생성**
-6. **Dataset / DataLoader 정의**
-7. **PyTorch 모델 정의**
-8. **학습 루프 및 검증(F1 점수)**
-9. **임의 문장에 대해 장르 예측 함수**
-
-각 셀을 **위에서부터 순서대로 실행**하면 학습이 진행됩니다.
-
----
-
-## 5. 주요 하이퍼파라미터
-
-코드 상단에서 쉽게 수정할 수 있는 주요 값들:
-
-```python
-MAX_VOCAB_SIZE = 20000   # 사용할 최대 단어 수
-MAX_SEQ_LEN = 256        # 입력 문장의 최대 토큰 길이
-BATCH_SIZE = 128
-EMBED_DIM = 128
-HIDDEN_DIM = 128
-NUM_EPOCHS = 5
-LR = 1e-3
+```
+Synopsify/
+├── data/                      # 데이터 파일
+│   ├── train_data.txt
+│   ├── test_data.txt
+│   └── test_data_solution.txt
+├── model/                     # 학습된 모델
+│   ├── lstm.pt
+│   ├── lstm_CW.pt
+│   └── bert/
+├── lstm_train.ipynb          # LSTM 학습 코드
+├── lstm_CW_train.ipynb       # LSTM CW 학습 코드
+├── bert_train.ipynb          # BERT 학습 코드
+├── predict.ipynb             # 예측 코드
+├── README.md
+└── .gitignore
 ```
 
-- GPU 성능이 부족하면 `BATCH_SIZE`를 줄이고,
-- 문장이 길면 `MAX_SEQ_LEN`을 늘려볼 수 있습니다.
-- 학습이 덜 되었다고 느껴지면 `NUM_EPOCHS`를 늘리세요.
 
----
+## 🔧 환경 설정
 
-## 6. 학습 & 평가
-
-학습 셀을 실행하면 매 epoch마다 다음과 같이 출력됩니다.
-
-```text
-[Epoch 1] Train loss: 0.25xx
-Val loss: 0.21xx | F1(macro): 0.44xx
-...
+### 필수 라이브러리
+```
+python
+torch
+transformers
+pandas
+numpy
+scikit-learn
+tqdm
 ```
 
-- `Train loss`: 학습 데이터에 대한 BCEWithLogitsLoss 평균
-- `Val loss`: 검증 데이터에 대한 loss
-- `F1(macro)`: 모든 장르에 대해 macro average F1 score  
-  (각 장르의 F1을 평균낸 값, 데이터 불균형에 조금 더 공정)
-
----
-
-## 7. 예측 사용 예시
-
-학습이 끝난 후, 아래와 같이 함수를 호출하여 새 줄거리에 대해 장르를 예측할 수 있습니다.
-
-```python
-sample_plot = (
-    "A young boy grows up in a small town and faces many challenges with his family and friends."
-)
-print("Input:", sample_plot)
-print("Predicted genres:", predict_genres(sample_plot, top_k=5))
+### 설치 방법
+```bash
+pip install torch transformers pandas numpy scikit-learn tqdm
 ```
 
-출력 예시:
+## 📝 주요 실험 변경사항
 
-```text
-Predicted genres: [('drama', 0.81), ('family', 0.42)]
-```
+1. **Loss Function**: CrossEntropyLoss → Weighted CrossEntropyLoss (LSTM CW)
+2. **Pretrained Model**: None → BERT-base (BERT)
+3. **Optimizer**: Adam → AdamW (BERT)
+4. **Scheduler**: None → Linear Warmup (BERT)
 
-- `top_k`: 상위 몇 개 장르를 보고 싶은지
-- `threshold`: 이 값보다 높은 확률만 결과에 포함
+## 🎯 결론
 
----
+### 주요 성과
+- ✅ **BERT-base 모델이 최고 성능 달성** (Accuracy: 69.47%)
+- ✅ **Pretrained 모델의 효과 확인**
+- ✅ **Class Weight 적용으로 F1-macro 개선** 
 
-## 8. 구조 확장 아이디어
-
-현재 모델은 **간단한 평균 임베딩 + MLP** 기반입니다. 더 좋은 성능을 위해:
-
-1. **RNN 계열 적용**
-   - `nn.LSTM`, `nn.GRU` 등으로 시퀀스 정보를 활용
-2. **CNN 기반 텍스트 분류**
-   - `nn.Conv1d` + Global Max Pooling 등 적용
-3. **Transformer / BERT 기반 모델**
-   - Hugging Face `transformers` 라이브러리 사용
-   - `bert-base-uncased` 등으로 파인튜닝
-4. **데이터 증강**
-   - 문장 랜덤 삭제 / synonym replacement 등
-
-이 README에서 설명한 구조는 **PyTorch 멀티라벨 텍스트 분류의 기본 뼈대**로,  
-위 아이디어들을 얹어서 쉽게 확장할 수 있습니다.
-
----
-
-## 9. 라이선스 & 출처
-
-- 데이터셋 출처:  
-  [Kaggle - Genre Classification Dataset (IMDB)](https://www.kaggle.com/datasets/hijest/genre-classification-dataset-imdb)
-- 이 코드는 교육 및 연구용으로 자유롭게 수정하여 사용할 수 있습니다.
+### 한계점 및 개선 방향
+- F1-macro가 여전히 낮음 (0.48) → 장르 불균형 문제
+- 27개 클래스 분류는 어려운 태스크
+- **향후 개선**: 더 큰 BERT 모델, Data Augmentation, Ensemble
