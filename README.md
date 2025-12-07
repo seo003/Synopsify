@@ -1,6 +1,6 @@
 # 🎬 Synopsify
 
-영화 **줄거리(plot)**를 입력하면, 해당 영화의 **장르(genre)**를 예측하는  
+영화 **줄거리(plot)** 를 입력하면, 해당 영화의 **장르(genre)** 를 예측하는  
 멀티라벨(Multi-label) 분류 모델
 
 - 데이터셋: [Kaggle - Genre Classification Dataset (IMDB)](https://www.kaggle.com/datasets/hijest/genre-classification-dataset-imdb)
