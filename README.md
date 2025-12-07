@@ -173,8 +173,6 @@ jupyter notebook predict.ipynb
 예측 장르: fantasy (confidence=0.331)
 ```
 
----
-
 ## 📁 프로젝트 구조
 
 ```
